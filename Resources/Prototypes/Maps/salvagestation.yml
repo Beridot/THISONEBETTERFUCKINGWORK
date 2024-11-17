@@ -1,0 +1,23 @@
+- type: gameMap
+  id: Salvagestation
+  mapName: 'Salvagestation'
+  mapPath: /Maps/salvagestation.yml # Goobstation - use custom saltern
+  minPlayers: 0
+  maxPlayers: 35
+  fallback: true
+  stations:
+    Salvagestation:
+      stationProto: StandardNanotrasenStation
+      components:
+        - type: StationNameSetup
+          mapNameTemplate: '{0} Salvagestation {1}'
+          nameGenerator:
+            !type:NanotrasenNameGenerator
+            prefixCreator: '14'
+        - type: StationJobs
+          availableJobs:
+            #service
+            # Goobstation - TODO: add bso and ntr
+            # Goobstation - Me did it, Icepick
+            Passenger: [ -1, -1 ]
+
