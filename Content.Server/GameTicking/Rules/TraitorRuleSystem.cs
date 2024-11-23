@@ -22,12 +22,8 @@ using System.Text;
 
 namespace Content.Server.GameTicking.Rules;
 
-/// <summary>
-///     Heavily edited.
-///     If you wanna upstream something think twice.
-///     Piras this is directed to you :trollface:
-///     regards.
-/// </summary>
+// goobstation - heavily edited.
+// do not touch unless you want to shoot yourself in the leg
 public sealed class TraitorRuleSystem : GameRuleSystem<TraitorRuleComponent>
 {
     private static readonly Color TraitorCodewordColor = Color.FromHex("#cc3b3b");
@@ -94,22 +90,21 @@ public sealed class TraitorRuleSystem : GameRuleSystem<TraitorRuleComponent>
         component.ObjectiveIssuer = issuer;
 
         Note[]? code = null;
+
         if (component.GiveUplink)
         {
             // Calculate the amount of currency on the uplink.
             var startingBalance = component.StartingBalance;
             if (_jobs.MindTryGetJob(mindId, out var prototype))
                 startingBalance = Math.Max(startingBalance - prototype.AntagAdvantage, 0);
-
             // creadth: we need to create uplink for the antag.
             // PDA should be in place already
             var pda = _uplink.FindUplinkTarget(traitor);
-            if (pda == null || !_uplink.AddUplink(traitor, startingBalance, giveDiscounts: true))
+            if (pda == null || !_uplink.AddUplink(traitor, startingBalance))
                 return false;
 
             // Give traitors their codewords and uplink code to keep in their character info menu
             code = EnsureComp<RingerUplinkComponent>(pda.Value).Code;
-
             // If giveUplink is false the uplink code part is omitted
             briefing = string.Format("{0}\n{1}", briefing,
                 Loc.GetString("traitor-role-uplink-code-short", ("code", string.Join("-", code).Replace("sharp", "#"))));
@@ -117,41 +112,6 @@ public sealed class TraitorRuleSystem : GameRuleSystem<TraitorRuleComponent>
 
         _antag.SendBriefing(traitor, GenerateBriefing(component.Codewords, code, issuer), Color.Crimson, component.GreetSoundNotification);
 
-        if (component.GiveUplink)
-        {
-            Log.Debug($"MakeTraitor {ToPrettyString(traitor)} - Uplink start");
-            // Calculate the amount of currency on the uplink.
-            var startingBalance = component.StartingBalance;
-            if (_jobs.MindTryGetJob(mindId, out var prototype))
-            {
-                if (startingBalance < prototype.AntagAdvantage) // Can't use Math functions on FixedPoint2
-                    startingBalance = 0;
-                else
-                    startingBalance = startingBalance - prototype.AntagAdvantage;
-            }
-
-            // Choose and generate an Uplink, and return the uplink code if applicable
-            Log.Debug($"MakeTraitor {ToPrettyString(traitor)} - Uplink request start");
-            var uplinkParams = RequestUplink(traitor, startingBalance, briefing);
-            code = uplinkParams.Item1;
-            briefing = uplinkParams.Item2;
-            Log.Debug($"MakeTraitor {ToPrettyString(traitor)} - Uplink request completed");
-        }
-
-        string[]? codewords = null;
-        if (component.GiveCodewords)
-        {
-            Log.Debug($"MakeTraitor {ToPrettyString(traitor)} - set codewords from component");
-            codewords = component.Codewords;
-        }
-
-        if (component.GiveBriefing)
-        {
-            _antag.SendBriefing(traitor, GenerateBriefing(codewords, code, issuer), null, component.GreetSoundNotification);
-            Log.Debug($"MakeTraitor {ToPrettyString(traitor)} - Sent the Briefing");
-        }
-
-        Log.Debug($"MakeTraitor {ToPrettyString(traitor)} - Adding TraitorMind");
         component.TraitorMinds.Add(mindId);
 
         // Assign briefing
@@ -162,7 +122,8 @@ public sealed class TraitorRuleSystem : GameRuleSystem<TraitorRuleComponent>
         if (traitorRole is not null)
         {
             AddComp<RoleBriefingComponent>(traitorRole.Value.Owner);
-            Comp<RoleBriefingComponent>(traitorRole.Value.Owner).Briefing = GenerateBriefingCharacter(component.Codewords, code, issuer);
+            Comp<RoleBriefingComponent>(traitorRole.Value.Owner).Briefing = briefing;
+            GenerateBriefingCharacter(component.Codewords, code, issuer);
         }
 
         // Send codewords to only the traitor client
@@ -172,41 +133,10 @@ public sealed class TraitorRuleSystem : GameRuleSystem<TraitorRuleComponent>
         _roleCodewordSystem.SetRoleCodewords(codewordComp, "traitor", component.Codewords.ToList(), color);
 
         // Change the faction
-        Log.Debug($"MakeTraitor {ToPrettyString(traitor)} - Change faction");
         _npcFaction.RemoveFaction(traitor, component.NanoTrasenFaction, false);
         _npcFaction.AddFaction(traitor, component.SyndicateFaction);
 
-        Log.Debug($"MakeTraitor {ToPrettyString(traitor)} - Finished");
         return true;
-    }
-
-    private (Note[]?, string) RequestUplink(EntityUid traitor, FixedPoint2 startingBalance, string briefing)
-    {
-        var pda = _uplink.FindUplinkTarget(traitor);
-        Note[]? code = null;
-
-        Log.Debug($"MakeTraitor {ToPrettyString(traitor)} - Uplink add");
-        var uplinked = _uplink.AddUplink(traitor, startingBalance, pda, true);
-
-        if (pda is not null && uplinked)
-        {
-            Log.Debug($"MakeTraitor {ToPrettyString(traitor)} - Uplink is PDA");
-            // Codes are only generated if the uplink is a PDA
-            code = EnsureComp<RingerUplinkComponent>(pda.Value).Code;
-
-            // If giveUplink is false the uplink code part is omitted
-            briefing = string.Format("{0}\n{1}",
-                briefing,
-                Loc.GetString("traitor-role-uplink-code-short", ("code", string.Join("-", code).Replace("sharp", "#"))));
-            return (code, briefing);
-        }
-        else if (pda is null && uplinked)
-        {
-            Log.Debug($"MakeTraitor {ToPrettyString(traitor)} - Uplink is implant");
-            briefing += "\n" + Loc.GetString("traitor-role-uplink-implant-short");
-        }
-
-        return (null, briefing);
     }
 
     // TODO: AntagCodewordsComponent
@@ -217,17 +147,21 @@ public sealed class TraitorRuleSystem : GameRuleSystem<TraitorRuleComponent>
     }
 
     // TODO: figure out how to handle this? add priority to briefing event?
-    private string GenerateBriefing(string[]? codewords, Note[]? uplinkCode, string? objectiveIssuer = null)
+    private string GenerateBriefing(string[] codewords, Note[]? uplinkCode, string objectiveIssuer)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(Loc.GetString("traitor-role-greeting", ("corporation", objectiveIssuer ?? Loc.GetString("objective-issuer-unknown"))));
-        if (codewords != null)
-            sb.AppendLine(Loc.GetString("traitor-role-codewords", ("codewords", string.Join(", ", codewords))));
-        if (uplinkCode != null)
-            sb.AppendLine(Loc.GetString("traitor-role-uplink-code", ("code", string.Join("-", uplinkCode).Replace("sharp", "#"))));
-        else
-            sb.AppendLine(Loc.GetString("traitor-role-uplink-implant"));
+        sb.AppendLine("\n" + Loc.GetString($"traitor-{objectiveIssuer}-intro"));
 
+        if (uplinkCode != null)
+        {
+            sb.AppendLine("\n" + Loc.GetString($"traitor-{objectiveIssuer}-uplink"));
+            sb.AppendLine(Loc.GetString($"traitor-role-uplink-code", ("code", string.Join("-", uplinkCode).Replace("sharp", "#"))));
+        }
+        else sb.AppendLine("\n" + Loc.GetString($"traitor-role-nouplink"));
+
+        sb.AppendLine("\n" + Loc.GetString($"traitor-role-codewords", ("codewords", string.Join(", ", codewords))));
+
+        sb.AppendLine("\n" + Loc.GetString($"traitor-role-moreinfo"));
 
         return sb.ToString();
     }
